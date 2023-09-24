@@ -105,21 +105,19 @@ auto renderMain(SDL::SDLRendererPtr& renderer, const camera::Camera& camera, con
 
 	glm::mat4 cameraTrsf = camera::getTransform(camera);
 
-	int numberOfRays = 800;
-	auto rayOrigin = camera.position;
-	auto front = camera.front;
+	const int numberOfRays = 800;
+	const auto rayOrigin = camera.position;
+	const auto frontVector = camera.front;
+	const auto rightVector = glm::vec2(frontVector.y, -frontVector.x);
 
-	SDL::renderClear(renderer, glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
+	float projectionPlaneWidth = std::tanf(camera.fov / 2) * 2;
+	float rayVectorOffset = projectionPlaneWidth / numberOfRays;
+
 
 	for (size_t i = 0; i < numberOfRays; i++)
 	{
-		float angle = (i - numberOfRays / 2.0f) * (camera.fov / (float)numberOfRays);
-
-		auto rotationMatrix = glm::mat2x2(
-			std::cos(-angle), -std::sin(-angle),
-			std::sin(-angle), std::cos(-angle));
-
-		auto rayDirection = rotationMatrix * front;
+		const float amountToOffset = (rayVectorOffset * (float)((int)i - (numberOfRays / 2)));
+		const auto rayDirection = glm::normalize(frontVector - rightVector * amountToOffset);
 
 		Line rayLine{ rayOrigin, rayOrigin + rayDirection * camera.farPlane };
 
@@ -133,7 +131,7 @@ auto renderMain(SDL::SDLRendererPtr& renderer, const camera::Camera& camera, con
 
 				float eyeDistance = glm::distance(rayOrigin, point);
 
-				float normalizedCameraPlaneDistance = eyeDistance * std::cos(angle) / camera.farPlane;
+				float normalizedCameraPlaneDistance = eyeDistance * glm::dot(frontVector, rayDirection)  / camera.farPlane;
 
 				if (normalizedCameraPlaneDistance < zbuffer[i])
 				{
@@ -143,6 +141,8 @@ auto renderMain(SDL::SDLRendererPtr& renderer, const camera::Camera& camera, con
 			}
 		}
 	}
+
+	SDL::renderClear(renderer, glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
 
 	for (int i = 0; i < zbuffer.size(); i++)
 	{
@@ -225,9 +225,9 @@ int main(int argc, char* argv[])
 	std::vector<wall::Wall> lines = 
 	{ 
 		wall::Wall( glm::vec2( 4.0f,  1.0f), glm::vec2( 2.0f,  1.0f), 1.0f, glm::vec3(0.8f, 0.1f, 0.0f)),
-		wall::Wall( glm::vec2( 2.0f,  1.0f), glm::vec2( 2.0f,  3.0f), 1.0f, glm::vec3(0.8f, 0.1f, 0.0f)),
-		wall::Wall( glm::vec2( 2.0f,  3.0f), glm::vec2(-3.0f,  3.0f), 1.0f, glm::vec3(0.8f, 0.1f, 0.0f)),
-		wall::Wall( glm::vec2(-3.0f,  3.0f), glm::vec2(-3.0f, -1.0f), 1.0f, glm::vec3(0.8f, 0.1f, 0.0f)),
+		wall::Wall( glm::vec2( 2.0f,  1.0f), glm::vec2( 2.0f,  3.0f), 1.0f, glm::vec3(0.1f, 0.8f, 0.0f)),
+		wall::Wall( glm::vec2( 2.0f,  3.0f), glm::vec2(-3.0f,  3.0f), 1.0f, glm::vec3(0.1f, 0.0f, 0.8f)),
+		wall::Wall( glm::vec2(-3.0f,  3.0f), glm::vec2(-3.0f, -1.0f), 1.0f, glm::vec3(0.8f, 0.0f, 0.1f)),
 		wall::Wall( glm::vec2(-3.0f, -1.0f), glm::vec2( 0.0f, -1.0f), 1.0f, glm::vec3(0.8f, 0.1f, 0.0f)),
 		wall::Wall( glm::vec2( 0.0f, -1.0f), glm::vec2( 0.0f, -2.0f), 1.0f, glm::vec3(0.8f, 0.1f, 0.0f)),
 		wall::Wall( glm::vec2( 0.0f, -2.0f), glm::vec2(-3.0f, -2.0f), 1.0f, glm::vec3(0.8f, 0.1f, 0.0f)),
