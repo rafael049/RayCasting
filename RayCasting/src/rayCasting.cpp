@@ -15,6 +15,7 @@
 #include "sdl.hpp"
 #include "camera.hpp"
 #include "wall.hpp"
+#include "media.hpp"
 
 
 enum class Orientation
@@ -98,10 +99,20 @@ auto renderViewport(SDL::SDLRendererPtr& renderer, const camera::Camera& camera,
 }
 
 
-auto renderMain(SDL::SDLRendererPtr& renderer, const camera::Camera& camera, const std::vector<wall::Wall> level)
+auto sampleFromTexture(media::Image texture, glm::vec2 uv) -> glm::vec4
+{
+	size_t pixelXPosition = texture.width * uv.x;
+	size_t pixelYPostion = texture.height* uv.y;
+
+	return texture.data[pixelYPostion * texture.width + pixelXPosition];
+}
+
+
+auto renderMain(SDL::SDLRendererPtr& renderer, const camera::Camera& camera, const std::vector<wall::Wall> level, const std::vector<media::Image>& textures)
 {
 	std::vector<float> zbuffer(800, 1.0f);
 	std::vector<glm::vec3> colorBuffer(800, glm::vec3(0.0f));
+	std::vector<float> uvBuffer(800, 0.0f);
 
 	glm::mat4 cameraTrsf = camera::getTransform(camera);
 
@@ -127,9 +138,10 @@ auto renderMain(SDL::SDLRendererPtr& renderer, const camera::Camera& camera, con
 
 			if (hasIntersection.has_value())
 			{
-				auto point = *hasIntersection;
+				auto intersectionPoint = *hasIntersection;
 
-				float eyeDistance = glm::distance(rayOrigin, point);
+				// Get depth
+				float eyeDistance = glm::distance(rayOrigin, intersectionPoint);
 
 				float normalizedCameraPlaneDistance = eyeDistance * glm::dot(frontVector, rayDirection)  / camera.farPlane;
 
@@ -138,6 +150,9 @@ auto renderMain(SDL::SDLRendererPtr& renderer, const camera::Camera& camera, con
 					zbuffer[i] = normalizedCameraPlaneDistance;
 					colorBuffer[i] = wall.color;
 				}
+
+				// Get uv coord
+				uvBuffer[i] = glm::distance(intersectionPoint, wall.line.start) / glm::distance(wall.line.end, wall.line.start);
 			}
 		}
 	}
@@ -151,12 +166,18 @@ auto renderMain(SDL::SDLRendererPtr& renderer, const camera::Camera& camera, con
 		if (pixelDistance < 1.0f && i % 1 == 0)
 		{
 			float lineHeight = std::min(300.0f, (2.0f/pixelDistance));
-			float pixelPosition = zbuffer.size() - (i + 1);
+			float pixelHorizontalPostion = zbuffer.size() - (i + 1);
 
-			const Line verticalLine{ glm::vec2(pixelPosition, 300.0f - lineHeight), glm::vec2(pixelPosition, 300.0f + lineHeight) };
+			const Line verticalLine{ glm::vec2(pixelHorizontalPostion, 300.0f - lineHeight), glm::vec2(pixelHorizontalPostion, 300.0f + lineHeight) };
 
-			glm::vec3 color = colorBuffer[i] * (float)std::pow(1.0f - pixelDistance, 8.0f);
-			SDL::drawLine(renderer, verticalLine.start, verticalLine.end, glm::vec4(color, 1.0f));
+			auto texture = textures.front();
+
+			for (int j = -lineHeight; j < lineHeight; j++)
+			{
+				glm::vec2 uv = glm::vec2(uvBuffer[i], (j + lineHeight) / (2 * lineHeight));
+				glm::vec3 color = sampleFromTexture(texture, uv);
+				SDL::drawPoint(renderer, glm::vec2(pixelHorizontalPostion, 300.0f + j), glm::vec4(color, 1.0f));
+			}
 		}
 	}
 
@@ -211,6 +232,21 @@ auto processInput(SDL::EventHandler& eventHandler, camera::Camera& camera, const
 
 int main(int argc, char* argv[])
 {
+	std::vector<media::Image> textures;
+
+	auto result = media::imageFromBitMapFile("assets/textures/brick.bmp");
+
+	if (!result.has_value())
+	{
+		std::cout << result.error();
+		exit(1);
+	}
+	else
+	{
+		textures.push_back(result.value());
+	}
+
+
 	SDL::initializeSDL();
 
 	auto viewPortWindow = *SDL::createWindow("Viewport", {800, 600});
@@ -259,7 +295,7 @@ int main(int argc, char* argv[])
 		auto rayOrigin = applyTransform2d(cameraTrsf, glm::vec2(0.0f, 0.0f));
 		auto front = camera.front;
 
-		renderMain(mainRenderer, camera, lines);
+		renderMain(mainRenderer, camera, lines, textures);
 
 		renderViewport(viewPortRenderer, camera, lines);
 	}

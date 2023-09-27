@@ -82,6 +82,12 @@ namespace SDL
 		SDL_RenderDrawLine(renderer.get(), start.x, start.y, end.x, end.y);
     }
 
+    auto drawPoint(SDLRendererPtr& renderer, const glm::vec2 point, const glm::vec4 color)
+    {
+        SDL_SetRenderDrawColor(renderer.get(), static_cast<Uint8>(color.x * 255), static_cast<Uint8>(color.y * 255), static_cast<Uint8>(color.z * 255), static_cast<Uint8>(color.w * 255));
+        SDL_RenderDrawPoint(renderer.get(), point.x, point.y);
+    }
+
 
     auto renderClear(SDLRendererPtr& renderer, const glm::vec4 clearColor)
     {
