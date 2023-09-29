@@ -1,3 +1,5 @@
+#pragma once
+
 #include <vector>
 #include <fstream>
 #include <string>
@@ -19,6 +21,14 @@ namespace media
 			data(width* height), height(height), width(width)
 		{
 			
+		}
+
+		Image(const Image& image)
+		{
+			data = image.data;
+
+			width = image.width;
+			height = image.height;
 		}
 	};
 

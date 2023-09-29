@@ -135,6 +135,7 @@
     <ClInclude Include="src\camera.hpp" />
     <ClInclude Include="src\media.hpp" />
     <ClInclude Include="src\line.hpp" />
+    <ClInclude Include="src\rendering.hpp" />
     <ClInclude Include="src\sdl.hpp" />
     <ClInclude Include="src\wall.hpp" />
   </ItemGroup>

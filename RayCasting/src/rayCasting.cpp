@@ -16,6 +16,7 @@
 #include "camera.hpp"
 #include "wall.hpp"
 #include "media.hpp"
+#include "rendering.hpp"
 
 
 enum class Orientation
@@ -23,6 +24,7 @@ enum class Orientation
 	ClockWise,
 	CounterClockWise
 };
+
 
 
 auto orientation(const glm::vec2 p, const glm::vec2 q, const glm::vec2 r) -> Orientation
@@ -76,7 +78,7 @@ auto applyTransform2d(const glm::mat3 transf, const glm::vec2 vec) -> glm::vec2
 }
 
 
-auto renderViewport(SDL::SDLRendererPtr& renderer, const camera::Camera& camera, const std::vector<wall::Wall>& level)
+auto renderViewport(rendering::Context& context, const camera::Camera& camera, const std::vector<wall::Wall>& level)
 {
 	glm::mat3 viewMatrix = glm::mat3(50.0f);
 
@@ -86,29 +88,29 @@ auto renderViewport(SDL::SDLRendererPtr& renderer, const camera::Camera& camera,
 
 	const Line cameraLine = Line{ camera.position, camera.position + camera.front * camera.farPlane };
 
-	SDL::renderClear(renderer, glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
+	SDL::renderClear(context.renderer, glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
 
-	SDL::drawLine(renderer, applyTransform2d(viewMatrix, cameraLine.start), applyTransform2d(viewMatrix, cameraLine.end), glm::vec4(1.0, 0.0, 0.0, 1.0));
+	SDL::drawLine(context.renderer, applyTransform2d(viewMatrix, cameraLine.start), applyTransform2d(viewMatrix, cameraLine.end), glm::vec4(1.0, 0.0, 0.0, 1.0));
 
 	for (const auto& wall : level)
 	{
-		SDL::drawLine(renderer, applyTransform2d(viewMatrix, wall.line.start), applyTransform2d(viewMatrix, wall.line.end), glm::vec4(wall.color, 1.0f));
+		SDL::drawLine(context.renderer, applyTransform2d(viewMatrix, wall.line.start), applyTransform2d(viewMatrix, wall.line.end), glm::vec4(wall.color, 1.0f));
 	}
 
-	SDL::renderPresent(renderer);
+	SDL::renderPresent(context.renderer);
 }
 
 
-auto sampleFromTexture(media::Image texture, glm::vec2 uv) -> glm::vec4
+auto sampleFromTexture(const media::Image& texture, const glm::vec2 uv) -> glm::vec4
 {
-	size_t pixelXPosition = texture.width * uv.x;
-	size_t pixelYPostion = texture.height* uv.y;
+	size_t pixelXPosition = ((size_t)(texture.width * uv.x)) % texture.width;
+	size_t pixelYPostion = ((size_t)(texture.height* uv.y)) % texture.height;
 
 	return texture.data[pixelYPostion * texture.width + pixelXPosition];
 }
 
 
-auto renderMain(SDL::SDLRendererPtr& renderer, const camera::Camera& camera, const std::vector<wall::Wall> level, const std::vector<media::Image>& textures)
+auto renderMain(rendering::Context& context, const camera::Camera& camera, const std::vector<wall::Wall>& level, const std::vector<media::Image>& textures)
 {
 	std::vector<float> zbuffer(800, 1.0f);
 	std::vector<glm::vec3> colorBuffer(800, glm::vec3(0.0f));
@@ -149,15 +151,13 @@ auto renderMain(SDL::SDLRendererPtr& renderer, const camera::Camera& camera, con
 				{
 					zbuffer[i] = normalizedCameraPlaneDistance;
 					colorBuffer[i] = wall.color;
+					uvBuffer[i] = glm::distance(intersectionPoint, wall.line.start);
 				}
-
-				// Get uv coord
-				uvBuffer[i] = glm::distance(intersectionPoint, wall.line.start) / glm::distance(wall.line.end, wall.line.start);
 			}
 		}
 	}
 
-	SDL::renderClear(renderer, glm::vec4(0.0f, 0.0f, 0.0f, 1.0f));
+	rendering::clearContext(context);
 
 	for (int i = 0; i < zbuffer.size(); i++)
 	{
@@ -165,23 +165,24 @@ auto renderMain(SDL::SDLRendererPtr& renderer, const camera::Camera& camera, con
 
 		if (pixelDistance < 1.0f && i % 1 == 0)
 		{
-			float lineHeight = std::min(300.0f, (2.0f/pixelDistance));
+			float lineHeight = 2.0f/pixelDistance;
 			float pixelHorizontalPostion = zbuffer.size() - (i + 1);
 
 			const Line verticalLine{ glm::vec2(pixelHorizontalPostion, 300.0f - lineHeight), glm::vec2(pixelHorizontalPostion, 300.0f + lineHeight) };
 
-			auto texture = textures.front();
+			auto& texture = textures.front();
 
-			for (int j = -lineHeight; j < lineHeight; j++)
+			for (int j = std::max(-300, -(int)lineHeight); j < lineHeight && j < 300; j++)
 			{
-				glm::vec2 uv = glm::vec2(uvBuffer[i], (j + lineHeight) / (2 * lineHeight));
+				glm::vec2 uv = glm::vec2(uvBuffer[i], ((float)j + lineHeight) / (2.0f * lineHeight));
 				glm::vec3 color = sampleFromTexture(texture, uv);
-				SDL::drawPoint(renderer, glm::vec2(pixelHorizontalPostion, 300.0f + j), glm::vec4(color, 1.0f));
+
+				rendering::setSceenBufferPixel(context, pixelHorizontalPostion, 300 + j, glm::vec4(color, 1.0f));
 			}
 		}
 	}
 
-	SDL::renderPresent(renderer);
+	rendering::renderContext(context);
 }
 
 
@@ -249,11 +250,15 @@ int main(int argc, char* argv[])
 
 	SDL::initializeSDL();
 
-	auto viewPortWindow = *SDL::createWindow("Viewport", {800, 600});
-	auto mainWindow = *SDL::createWindow("Main window", {800, 600});
 
-	auto viewPortRenderer = *SDL::createRenderer(viewPortWindow);
+	auto viewWindow = *SDL::createWindow("View window", { 800, 600 });
+	auto mainWindow = *SDL::createWindow("Main window", { 800, 600 });
+
+	auto viewRenderer = *SDL::createRenderer(viewWindow);
 	auto mainRenderer = *SDL::createRenderer(mainWindow);
+
+	rendering::Context viewContext(std::move(viewWindow), std::move(viewRenderer), 800, 600);
+	rendering::Context mainContext(std::move(mainWindow), std::move(mainRenderer), 800, 600);
 
 	bool quit = false;
 	auto eventHandler = SDL::EventHandler();
@@ -295,9 +300,9 @@ int main(int argc, char* argv[])
 		auto rayOrigin = applyTransform2d(cameraTrsf, glm::vec2(0.0f, 0.0f));
 		auto front = camera.front;
 
-		renderMain(mainRenderer, camera, lines, textures);
+		renderMain(mainContext, camera, lines, textures);
 
-		renderViewport(viewPortRenderer, camera, lines);
+		renderViewport(viewContext, camera, lines);
 	}
 
 	return 0;

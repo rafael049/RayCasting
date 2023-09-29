@@ -1,3 +1,6 @@
+#pragma once
+
+
 #define SDL_MAIN_HANDLED
 
 #include <SDL2/SDL.h>
@@ -21,14 +24,23 @@ namespace SDL
 
 	struct SDLRendererDeleter
 	{
-		void operator()(SDL_Renderer* p_window)
+		void operator()(SDL_Renderer* p_renderer)
 		{
-			SDL_DestroyRenderer(p_window);
+			SDL_DestroyRenderer(p_renderer);
+		}
+	};
+
+	struct SDLTextureDeleter
+	{
+		void operator()(SDL_Texture* p_texture)
+		{
+			SDL_DestroyTexture(p_texture);
 		}
 	};
 
 	using SDLWindowPtr = std::unique_ptr<SDL_Window, SDLWindowDeleter>;
 	using SDLRendererPtr = std::unique_ptr<SDL_Renderer, SDLRendererDeleter>;
+	using SDLTexturePtr = std::unique_ptr<SDL_Texture, SDLTextureDeleter>;
 
 
 	auto initializeSDL() -> std::expected<bool, std::string>
@@ -75,6 +87,22 @@ namespace SDL
 	}
 
 
+	auto createTexture(SDLRendererPtr& renderer, size_t width, size_t height) -> std::expected<SDLTexturePtr, std::string>
+	{
+        SDL_Texture* texture = SDL_CreateTexture(renderer.get(), SDL_PIXELFORMAT_RGBA8888, SDL_TEXTUREACCESS_STREAMING, (int)width, (int)height);
+
+		if (!texture)
+		{
+			auto message = std::format("Texture creation failed: {}", SDL_GetError());
+
+			return std::unexpected(message);
+		}
+
+		SDLTextureDeleter textureDeleter;
+
+		return SDLTexturePtr(texture, textureDeleter);
+	}
+
 
     auto drawLine(SDLRendererPtr& renderer, const glm::vec2 start, const glm::vec2 end, const glm::vec4 color)
     {
@@ -99,6 +127,18 @@ namespace SDL
     auto renderPresent(SDLRendererPtr& renderer)
     {
 		SDL_RenderPresent(renderer.get());
+    }
+
+
+    auto updateTexture(SDLTexturePtr& texture, const std::vector<uint32_t>& pixels)
+    {
+        SDL_UpdateTexture(texture.get(), nullptr, pixels.data(), 800*4);
+    }
+
+    
+    auto renderCopy(SDLRendererPtr& renderer, SDLTexturePtr& texture)
+    {
+        SDL_RenderCopy(renderer.get(), texture.get(), nullptr, nullptr);
     }
 
 
@@ -401,6 +441,8 @@ namespace SDL
             {
                 return KeyState::Holding;
             }
+
+            return KeyState::None;
         }
 
         auto shouldQuit() -> bool
