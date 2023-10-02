@@ -7,12 +7,17 @@ Small project to learn more about computer graphics and this rendering technique
 
 - ✔️ Texture Mapping
 
-- ❌ Ground and Ceiling Texture
+- ✔️ Ground and Ceiling Texture
 
-- ❌ Different wall heights
+- ✔️ Move camera up and down
 
-- ❌ Different floor levels
+- ✔️ Different wall heights
+
+- ❌ Texture filtering and mipmaping
 
 - ❌ 2D objets rendering
 
 - ❌ Skybox
+
+- ❌ Different floor levels
+

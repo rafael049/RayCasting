@@ -107,13 +107,13 @@ namespace SDL
     auto drawLine(SDLRendererPtr& renderer, const glm::vec2 start, const glm::vec2 end, const glm::vec4 color)
     {
         SDL_SetRenderDrawColor(renderer.get(), static_cast<Uint8>(color.x * 255), static_cast<Uint8>(color.y * 255), static_cast<Uint8>(color.z * 255), static_cast<Uint8>(color.w * 255));
-		SDL_RenderDrawLine(renderer.get(), start.x, start.y, end.x, end.y);
+		SDL_RenderDrawLine(renderer.get(), static_cast<int>(start.x), static_cast<int>(start.y), static_cast<int>(end.x), static_cast<int>(end.y));
     }
 
     auto drawPoint(SDLRendererPtr& renderer, const glm::vec2 point, const glm::vec4 color)
     {
         SDL_SetRenderDrawColor(renderer.get(), static_cast<Uint8>(color.x * 255), static_cast<Uint8>(color.y * 255), static_cast<Uint8>(color.z * 255), static_cast<Uint8>(color.w * 255));
-        SDL_RenderDrawPoint(renderer.get(), point.x, point.y);
+        SDL_RenderDrawPoint(renderer.get(), static_cast<int>(point.x), static_cast<int>(point.y));
     }
 
 
@@ -130,9 +130,9 @@ namespace SDL
     }
 
 
-    auto updateTexture(SDLTexturePtr& texture, const std::vector<uint32_t>& pixels)
+    auto updateTexture(SDLTexturePtr& texture, const std::vector<uint32_t>& pixels, size_t width)
     {
-        SDL_UpdateTexture(texture.get(), nullptr, pixels.data(), 800*4);
+        SDL_UpdateTexture(texture.get(), nullptr, pixels.data(), width * sizeof(pixels[0]));
     }
 
     

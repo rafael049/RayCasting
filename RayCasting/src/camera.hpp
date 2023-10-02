@@ -17,6 +17,8 @@ namespace camera
 		float fov = glm::radians(90.0f);
 
 		float farPlane = 100.0f;
+
+		float height = 1.0f;
 	};
 
 

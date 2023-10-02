@@ -30,6 +30,24 @@ namespace media
 			width = image.width;
 			height = image.height;
 		}
+
+		Image(Image&& image) noexcept
+		{
+			data = std::move(image.data);
+
+			width = image.width;
+			height = image.height;
+		}
+
+		Image& operator=(Image&& image) noexcept
+		{
+			data = std::move(image.data);
+
+			width = image.width;
+			height = image.height;
+
+			return *this;
+		}
 	};
 
 
