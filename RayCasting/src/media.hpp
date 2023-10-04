@@ -6,13 +6,13 @@
 #include <expected>
 #include <format>
 
-#include <glm/vec4.hpp>
+#include "ds.hpp"
 
 namespace media
 {
 	struct Image
 	{
-		std::vector<glm::vec4> data;
+		std::vector<ds::ColorRGBA> data;
 
 		size_t width;
 		size_t height;
@@ -139,11 +139,11 @@ namespace media
 				{
 					size_t rowOffset = i * rowSize;
 
-					auto color = glm::vec4(
-						buffer[rowOffset + j + 2] / 255.0f, 
-						buffer[rowOffset + j + 1] / 255.0f, 
-						buffer[rowOffset + j] / 255.0f, 
-						1.0f);
+					auto color = ds::ColorRGBA(
+						buffer[rowOffset + j + 2], 
+						buffer[rowOffset + j + 1], 
+						buffer[rowOffset + j], 
+						255);
 
 					image.data[imageIndex] = color;
 

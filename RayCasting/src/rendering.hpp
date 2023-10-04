@@ -7,7 +7,8 @@
 
 namespace rendering
 {
-	using ScreenBuffer = std::vector<uint32_t>;
+	template <typename T>
+	using ScreenBuffer = std::vector<T>;
 
 	struct Texture
 	{
@@ -32,7 +33,7 @@ namespace rendering
 					image.data[_i       * image.width + _j    ] +
 					image.data[_i       * image.width + _j + 1] +
 					image.data[(_i + 1) * image.width + _j    ] +
-					image.data[(_i + 1) * image.width + _j + 1])/4.0f;
+					image.data[(_i + 1) * image.width + _j + 1])/4;
 			}
 		}
 
@@ -57,14 +58,17 @@ namespace rendering
 		SDL::SDLRendererPtr renderer;
 		SDL::SDLTexturePtr screenTexture;
 		size_t width, height;
-		ScreenBuffer screenBuffer;
+		ScreenBuffer<uint32_t> screenBuffer;
+		ScreenBuffer<uint8_t> stencilBuffer;
 
 		bool useMipmap = true;
+		bool useFiltering = true;
 
 		Context(SDL::SDLWindowPtr&& window, SDL::SDLRendererPtr&& renderer, size_t width, size_t height) :
 			window (std::move(window)),
 			renderer(std::move(renderer)),
 			screenBuffer(width * height),
+			stencilBuffer(width * height),
 			width(width),
 			height(height)
 		{
@@ -73,17 +77,23 @@ namespace rendering
 	};
 
 
-	auto setSceenBufferPixel(Context& context, const size_t x, const size_t y, const glm::vec4& color)
+	auto setSceenBufferPixel(Context& context, const size_t x, const size_t y, const glm::u8vec4& color)
 	{
 		std::array<uint8_t, 4> colorDWord = 
 		{
-			(uint8_t)(255 * color.a),
-			(uint8_t)(255 * color.b),
-			(uint8_t)(255 * color.g),
-			(uint8_t)(255 * color.r),
+			(uint8_t)(color.a),
+			(uint8_t)(color.b),
+			(uint8_t)(color.g),
+			(uint8_t)(color.r),
 		};
 
 		context.screenBuffer[y * context.width + x] = *((uint32_t*)colorDWord.data());
+	}
+
+
+	auto setStencilBufferPixel(Context& context, const size_t x, const size_t y, uint8_t value)
+	{
+		context.stencilBuffer[y * context.width + x] = value;
 	}
 
 
@@ -100,5 +110,6 @@ namespace rendering
 	auto clearContext(Context& context)
 	{
 		std::memset(context.screenBuffer.data(), 0, context.screenBuffer.size() * sizeof(context.screenBuffer[0]));
+		std::memset(context.stencilBuffer.data(), 0, context.stencilBuffer.size() * sizeof(context.stencilBuffer[0]));
 	}
 }

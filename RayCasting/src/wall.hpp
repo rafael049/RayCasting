@@ -16,9 +16,9 @@ namespace wall
 
 		float height;
 
-		glm::vec3 color;
+		ds::ColorRGB color;
 
-		Wall(glm::vec2 start, glm::vec2 end, float height, glm::vec3 color) :
+		Wall(glm::vec2 start, glm::vec2 end, float height, ds::ColorRGB color) :
 			line{ start, end }, height{ height }, color{ color }
 		{
 		}

@@ -4,13 +4,13 @@
 #define SDL_MAIN_HANDLED
 
 #include <SDL2/SDL.h>
-#include <glm/vec2.hpp>
-#include <glm/vec4.hpp>
 #include <iostream>
 #include <expected>
 #include <format>
 #include <memory>
 #include <map>
+
+#include "ds.hpp"
 
 namespace SDL
 {
@@ -104,20 +104,20 @@ namespace SDL
 	}
 
 
-    auto drawLine(SDLRendererPtr& renderer, const glm::vec2 start, const glm::vec2 end, const glm::vec4 color)
+    auto drawLine(SDLRendererPtr& renderer, const ds::Vec2 start, const ds::Vec2 end, const ds::ColorRGBA color)
     {
-        SDL_SetRenderDrawColor(renderer.get(), static_cast<Uint8>(color.x * 255), static_cast<Uint8>(color.y * 255), static_cast<Uint8>(color.z * 255), static_cast<Uint8>(color.w * 255));
+        SDL_SetRenderDrawColor(renderer.get(), static_cast<Uint8>(color.x), static_cast<Uint8>(color.y), static_cast<Uint8>(color.z), static_cast<Uint8>(color.w));
 		SDL_RenderDrawLine(renderer.get(), static_cast<int>(start.x), static_cast<int>(start.y), static_cast<int>(end.x), static_cast<int>(end.y));
     }
 
-    auto drawPoint(SDLRendererPtr& renderer, const glm::vec2 point, const glm::vec4 color)
+    auto drawPoint(SDLRendererPtr& renderer, const ds::Vec2 point, const ds::ColorRGBA color)
     {
-        SDL_SetRenderDrawColor(renderer.get(), static_cast<Uint8>(color.x * 255), static_cast<Uint8>(color.y * 255), static_cast<Uint8>(color.z * 255), static_cast<Uint8>(color.w * 255));
+        SDL_SetRenderDrawColor(renderer.get(), static_cast<Uint8>(color.x), static_cast<Uint8>(color.y), static_cast<Uint8>(color.z), static_cast<Uint8>(color.w));
         SDL_RenderDrawPoint(renderer.get(), static_cast<int>(point.x), static_cast<int>(point.y));
     }
 
 
-    auto renderClear(SDLRendererPtr& renderer, const glm::vec4 clearColor)
+    auto renderClear(SDLRendererPtr& renderer, const ds::ColorRGBA clearColor)
     {
 		SDL_SetRenderDrawColor(renderer.get(), clearColor.r, clearColor.g, clearColor.b, clearColor.a);
 		SDL_RenderClear(renderer.get());
