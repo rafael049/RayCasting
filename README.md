@@ -13,11 +13,14 @@ Small project to learn more about computer graphics and this rendering technique
 
 - ✔️ Different wall heights
 
-- ❌ Texture filtering and mipmaping
+- ✔️ Texture filtering and mipmaping
+
+- ✔️ MultiThreading
 
 - ❌ 2D objets rendering
 
 - ❌ Skybox
+
 
 - ❌ Different floor levels
 

@@ -3,6 +3,9 @@
 #include <thread>
 #include <optional>
 #include <ranges>
+#include <numeric>
+#include <algorithm>
+#include <execution>
 
 #include <glm/mat2x2.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -231,36 +234,42 @@ auto renderWalls(rendering::Context& context, const camera::Camera& camera, cons
 		}
 	}
 
-	for (int i = 0; i < zbuffer.size(); i++)
-	{
-		float pixelDistance = zbuffer[i];
 
-		if (pixelDistance < camera.farPlane)
+	std::vector<size_t> raysEnumeration(numberOfRays);
+
+	std::iota(raysEnumeration.begin(), raysEnumeration.end(), 0);
+
+	std::for_each(std::execution::par, raysEnumeration.begin(), raysEnumeration.end(),
+		[&](size_t i)
 		{
-			float worlWallTop = 2.0f - camera.height;
-			float worlWallBottom = 0.0f - camera.height;
-			float viewWallTop = worlWallTop / pixelDistance;
-			float viewWallBottom = worlWallBottom / pixelDistance;
-			int screenWallTop = viewWallTop * (float)(context.height) / projectionPlaneHeight;
-			int screenWallBottom = viewWallBottom * (float)(context.height) / projectionPlaneHeight;
+			float pixelDistance = zbuffer[i];
 
-			float pixelHorizontalPostion = zbuffer.size() - (i + 1);
-
-
-			size_t mipMapLevel = getMipmapLevel(pixelDistance);
-			const auto& texture = textures[0].mipmaps[mipMapLevel * (int)context.useMipmap];
-
-			for (int j = std::max(-(int)context.height/2, screenWallBottom) + 1; j < std::min((int)context.height/2, screenWallTop); j++)
+			if (pixelDistance < camera.farPlane)
 			{
-				const float uvY = camera.height + ((float)j * (projectionPlaneHeight / (float)context.height)) * pixelDistance;
-				const ds::Vec2 uv = ds::Vec2(uvBuffer[i], uvY);
-				const ds::Vec3 color = sampleFromTexture(texture, uv, context.useFiltering);
+				float worlWallTop = 2.0f - camera.height;
+				float worlWallBottom = 0.0f - camera.height;
+				float viewWallTop = worlWallTop / pixelDistance;
+				float viewWallBottom = worlWallBottom / pixelDistance;
+				int screenWallTop = viewWallTop * (float)(context.height) / projectionPlaneHeight;
+				int screenWallBottom = viewWallBottom * (float)(context.height) / projectionPlaneHeight;
 
-				rendering::setSceenBufferPixel(context, static_cast<size_t>(pixelHorizontalPostion), context.height/2 - j, ds::ColorRGBA(color, 1.0f));
-				rendering::setStencilBufferPixel(context, static_cast<size_t>(pixelHorizontalPostion), context.height/2 - j, 1);
+				float pixelHorizontalPostion = zbuffer.size() - (i + 1);
+
+
+				size_t mipMapLevel = getMipmapLevel(pixelDistance);
+				const auto& texture = textures[0].mipmaps[mipMapLevel * (int)context.useMipmap];
+
+				for (int j = std::max(-(int)context.height / 2, screenWallBottom) + 1; j < std::min((int)context.height / 2, screenWallTop); j++)
+				{
+					const float uvY = camera.height + ((float)j * (projectionPlaneHeight / (float)context.height)) * pixelDistance;
+					const ds::Vec2 uv = ds::Vec2(uvBuffer[i], uvY);
+					const ds::Vec3 color = sampleFromTexture(texture, uv, context.useFiltering);
+
+					rendering::setSceenBufferPixel(context, static_cast<size_t>(pixelHorizontalPostion), context.height / 2 - j, ds::ColorRGBA(color, 1.0f));
+					rendering::setStencilBufferPixel(context, static_cast<size_t>(pixelHorizontalPostion), context.height / 2 - j, 1);
+				}
 			}
-		}
-	}
+		});
 }
 
 
@@ -276,35 +285,43 @@ auto renderFloorAndCeiling(rendering::Context& context, const camera::Camera& ca
 	const size_t numberOfRays = context.height / 2;
 	const float rayOffset = projectionPlaneHeight / numberOfRays;
 
-	for (size_t i = 0; i < numberOfRays; i++)
-	{
-		const auto ray = glm::normalize(ds::Vec2(1.0f, -(i * rayOffset))); // +x is forward and +y is up
-		const auto downVec = ds::Vec2(0.0f, -1.0f); // angle is measured from this vec
-		const float angle = std::acos(glm::dot(downVec, ray));
-		const float intersectionDistance = std::tanf(angle) * eyeHeight; // this is the distance of the intersection point between the ray and the floor
+	std::vector<size_t> raysEnumeration(numberOfRays);
+
+	std::iota(raysEnumeration.begin(), raysEnumeration.end(), 0);
 
 
-		size_t mipMapLevel = getMipmapLevel(intersectionDistance);
-		const auto& floorTexture = textures[1].mipmaps[mipMapLevel * (int)context.useMipmap];
+	std::for_each(std::execution::par, raysEnumeration.begin(), raysEnumeration.end(),
 
-		for (int j = 0; j < context.width; j++)
+		[&](size_t i)
 		{
-			if (context.stencilBuffer[(i + screenCenterY) * context.width + j] == 1)
+			const auto ray = glm::normalize(ds::Vec2(1.0f, -(i * rayOffset))); // +x is forward and +y is up
+			const auto downVec = ds::Vec2(0.0f, -1.0f); // angle is measured from this vec
+			const float angle = std::acos(glm::dot(downVec, ray));
+			const float intersectionDistance = std::tanf(angle) * eyeHeight; // this is the distance of the intersection point between the ray and the floor
+
+
+			size_t mipMapLevel = getMipmapLevel(intersectionDistance);
+			const auto& floorTexture = textures[1].mipmaps[mipMapLevel * (int)context.useMipmap];
+
+			for (int j = 0; j < context.width; j++)
 			{
-				continue;
+				if (context.stencilBuffer[(i + screenCenterY) * context.width + j] == 1)
+				{
+					continue;
+				}
+
+				const auto right = ds::Vec2(camera.front.y, -camera.front.x);
+				const float uvFrontFactor = intersectionDistance;
+				const float uvRightFactor = (j - screenCenterX) * (projectionPlaneWidth / (float)(context.width / 2)) * intersectionDistance;
+				const auto uv = camera.position + (camera.front * uvFrontFactor) + (right * uvRightFactor);
+
+				const auto color = sampleFromTexture(floorTexture, uv, context.useFiltering);
+				//const auto color = ds::ColorRGBA(0.6f, 0.1f, 0.1f, 1.0f);
+
+				rendering::setSceenBufferPixel(context, j, i + screenCenterY, color);
 			}
-
-			const auto right = ds::Vec2(camera.front.y, -camera.front.x);
-			const float uvFrontFactor = intersectionDistance;
-			const float uvRightFactor = (j - screenCenterX) * (projectionPlaneWidth / (float)(context.width / 2)) * intersectionDistance;
-			const auto uv = camera.position + (camera.front * uvFrontFactor) + (right * uvRightFactor);
-
-			const auto color = sampleFromTexture(floorTexture, uv, context.useFiltering);
-			//const auto color = ds::ColorRGBA(0.6f, 0.1f, 0.1f, 1.0f);
-
-			rendering::setSceenBufferPixel(context, j, i + screenCenterY, color);
 		}
-	}
+	);
 }
 
 auto renderMain(rendering::Context& context, const camera::Camera& camera, const std::vector<wall::Wall>& level, const std::vector<rendering::Texture>& textures)
@@ -434,13 +451,13 @@ int main(int argc, char* argv[])
 	const int screenWidth = 800;
 	const int screenHeight = 600;
 
-	auto viewWindow = *SDL::createWindow("View window", { 800, 600 });
+	//auto viewWindow = *SDL::createWindow("View window", { 800, 600 });
 	auto mainWindow = *SDL::createWindow("Main window", { screenWidth, screenHeight });
 
-	auto viewRenderer = *SDL::createRenderer(viewWindow);
+	//auto viewRenderer = *SDL::createRenderer(viewWindow);
 	auto mainRenderer = *SDL::createRenderer(mainWindow);
 
-	rendering::Context viewContext(std::move(viewWindow), std::move(viewRenderer), 800, 600);
+	//rendering::Context viewContext(std::move(viewWindow), std::move(viewRenderer), 800, 600);
 	rendering::Context mainContext(std::move(mainWindow), std::move(mainRenderer), screenWidth, screenHeight);
 
 	bool quit = false;
@@ -481,7 +498,7 @@ int main(int argc, char* argv[])
 
 		renderMain(mainContext, camera, lines, textures);
 
-		renderViewport(viewContext, camera, lines);
+		//renderViewport(viewContext, camera, lines);
 	}
 
 	return 0;
