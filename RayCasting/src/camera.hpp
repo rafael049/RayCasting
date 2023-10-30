@@ -12,6 +12,8 @@ namespace camera
 	{
 		glm::vec2 position = glm::vec2(0.0f, 0.0f);
 
+		glm::vec2 velocity = glm::vec2(0.0f, 0.0f);
+
 		glm::vec2 front = glm::vec2(0.0f, 1.0f);
 
 		float fov = glm::radians(90.0f);
@@ -21,6 +23,30 @@ namespace camera
 		float height = 1.0f;
 	};
 
+	auto headMovement(camera::Camera& camera)
+	{
+		camera.height = 1.0f + std::sinf(glm::length(camera.position)*2.0f)*0.15;
+	}
+
+	auto friction(Camera& camera)
+	{
+		if (glm::length(camera.velocity) > 0.01f)
+		{
+			camera.velocity /= 2.0f;
+		}
+		else
+		{
+			camera.velocity.x = 0.0f;
+			camera.velocity.y = 0.0f;
+		}
+	}
+
+	auto updateCamera(Camera& camera)
+	{
+		camera.position += camera.velocity;
+		headMovement(camera);
+		friction(camera);
+	}
 
 	auto getTransform(const Camera& camera) -> glm::mat3
 	{

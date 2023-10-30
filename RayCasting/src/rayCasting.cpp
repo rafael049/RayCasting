@@ -82,8 +82,8 @@ auto renderViewport(rendering::Context& context, const camera::Camera& camera, c
 {
 	glm::mat3 viewMatrix = glm::mat3(50.0f);
 
-	viewMatrix[2][0] = (float)(context.width/2);
-	viewMatrix[2][1] = (float)(context.height/2);
+	viewMatrix[2][0] = (float)(context.width / 2);
+	viewMatrix[2][1] = (float)(context.height / 2);
 	viewMatrix[1][1] *= -1.0f;
 
 	const Line cameraLine = Line{ camera.position, camera.position + camera.front * camera.farPlane };
@@ -131,7 +131,7 @@ auto sampleFromTexture(const media::Image& texture, const ds::Vec2 uv, const boo
 		ds::ColorRGB color{};
 		getTexturePixelRepeated(texture, txi, tyi, color);
 
-		return { color[0], color[1], color[2], 255};
+		return { color[0], color[1], color[2], 255 };
 	}
 
 	ds::ColorRGB pa{};
@@ -143,7 +143,7 @@ auto sampleFromTexture(const media::Image& texture, const ds::Vec2 uv, const boo
 	ds::ColorRGB pd{};
 	getTexturePixelRepeated(texture, txi + 1, tyi + 1, pd);
 
-	const int w1 = static_cast<int>(255.0f*(tx - (float)txi));
+	const int w1 = static_cast<int>(255.0f * (tx - (float)txi));
 	const int w2 = 255 - w1;
 
 	const std::array<int, 4> ab = {
@@ -154,15 +154,15 @@ auto sampleFromTexture(const media::Image& texture, const ds::Vec2 uv, const boo
 	const std::array<int, 4> cd = {
 		(pd[0] * w1) + (pc[0] * w2),
 		(pd[1] * w1) + (pc[1] * w2),
-		(pd[2] * w1) + (pc[2] * w2) 
+		(pd[2] * w1) + (pc[2] * w2)
 	};
 
-	const int w3 = static_cast<int>(255.0f*(ty - (float)tyi));
+	const int w3 = static_cast<int>(255.0f * (ty - (float)tyi));
 	const int w4 = 255 - w3;
 	const std::array<int, 4> abcd = {
-		((cd[0] * w3) + (ab[0] * w4)) / (255*255),
-		((cd[1] * w3) + (ab[1] * w4)) / (255*255),
-		((cd[2] * w3) + (ab[2] * w4)) / (255*255)
+		((cd[0] * w3) + (ab[0] * w4)) / (255 * 255),
+		((cd[1] * w3) + (ab[1] * w4)) / (255 * 255),
+		((cd[2] * w3) + (ab[2] * w4)) / (255 * 255)
 	};
 
 	return ds::ColorRGBA(abcd[0], abcd[1], abcd[2], 255); // getTexturePixelRepeated(texture, txi, tyi);
@@ -192,8 +192,8 @@ size_t getMipmapLevel(float distance)
 
 auto renderWalls(rendering::Context& context, const camera::Camera& camera, const std::vector<wall::Wall>& level, const std::vector<rendering::Texture>& textures)
 {
-	std::vector<float> zbuffer(context.width, camera.farPlane);
 	std::vector<ds::Vec3> colorBuffer(context.width, ds::Vec3(0.0f));
+	std::vector<float> zbuffer(context.width, 1.0f);
 	std::vector<float> uvBuffer(context.width, 0.0f);
 
 	const int numberOfRays = context.width;
@@ -222,7 +222,7 @@ auto renderWalls(rendering::Context& context, const camera::Camera& camera, cons
 
 				float eyeDistance = glm::distance(rayOrigin, intersectionPoint);
 
-				float normalizedCameraPlaneDistance = eyeDistance * glm::dot(frontVector, rayDirection);
+				float normalizedCameraPlaneDistance = eyeDistance * glm::dot(frontVector, rayDirection) / camera.farPlane;
 
 				if (normalizedCameraPlaneDistance < zbuffer[i])
 				{
@@ -242,7 +242,7 @@ auto renderWalls(rendering::Context& context, const camera::Camera& camera, cons
 	std::for_each(std::execution::par, raysEnumeration.begin(), raysEnumeration.end(),
 		[&](size_t i)
 		{
-			float pixelDistance = zbuffer[i];
+			float pixelDistance = zbuffer[i]*camera.farPlane;
 
 			if (pixelDistance < camera.farPlane)
 			{
@@ -267,9 +267,67 @@ auto renderWalls(rendering::Context& context, const camera::Camera& camera, cons
 
 					rendering::setSceenBufferPixel(context, static_cast<size_t>(pixelHorizontalPostion), context.height / 2 - j, ds::ColorRGBA(color, 1.0f));
 					rendering::setStencilBufferPixel(context, static_cast<size_t>(pixelHorizontalPostion), context.height / 2 - j, 1);
+					rendering::setDepthBufferPixel(context, static_cast<size_t>(pixelHorizontalPostion), context.height / 2 - j, zbuffer[i]);
 				}
 			}
 		});
+}
+
+
+auto renderSprites(rendering::Context& context, const camera::Camera& camera, const std::vector<rendering::Sprite>& sprites)
+{
+	const int screenCenterX = context.width / 2;
+	const int screenCenterY = context.height / 2;
+	const float aspectRatio = (float)context.width / (float)context.height;
+
+	const ds::Vec2 cameraRight = ds::Vec2(camera.front.y, -camera.front.x);
+
+	for (const auto& sprite : sprites)
+	{
+		const float spriteCameraPlaneDistance = glm::dot(sprite.position - camera.position, camera.front);
+
+		if (spriteCameraPlaneDistance <= 0.0f)
+		{
+			continue;
+		}
+
+		const float spriteSize = sprite.size / (spriteCameraPlaneDistance * std::tan(camera.fov/2));
+
+		const float spriteWidth = spriteSize * context.width;
+		const float spriteHeight = spriteSize * context.width;
+
+		const ds::Vec2 fc = camera.position + camera.front*spriteCameraPlaneDistance;
+		const ds::Vec2 fcSpriteVector = sprite.position - fc;
+		const float distanceFc = glm::dot(fcSpriteVector, cameraRight);
+		const float distanceFcNormalized = (distanceFc / spriteCameraPlaneDistance);
+
+		const int spriteScreenCenterX = distanceFcNormalized * screenCenterX / (std::tan(camera.fov/2) * (context.width/context.height)) + screenCenterX;
+		const int spriteScreenCenterY = ((camera.height + sprite.height + 0.0f) / spriteCameraPlaneDistance) * screenCenterY / std::tan(camera.fov/2) + screenCenterY;
+		const int spriteScreenLeft = spriteScreenCenterX - spriteWidth / 2;
+		const int spriteScreenRight = spriteScreenCenterX + spriteWidth / 2;
+		const int spriteScreenTop = spriteScreenCenterY - spriteHeight / 2;
+		const int spriteScreenBottom = spriteScreenCenterY + spriteHeight / 2;
+
+		for (int i = std::max(spriteScreenTop, 0); i < std::min(spriteScreenBottom, (int)context.height); i++)
+		{
+			for (int j = std::max(spriteScreenLeft, 0); j < std::min(spriteScreenRight, (int)context.width); j++)
+			{
+				if (context.depthBuffer[i*context.width + j] > spriteCameraPlaneDistance/camera.farPlane)
+				{
+					const auto uv = ds::Vec2((float)((j - spriteScreenLeft) / spriteWidth), -(float)((i - spriteScreenTop) / spriteHeight));
+					const auto color = sampleFromTexture(sprite.texture.mipmaps[0], uv, false);
+
+					if (color == ds::ColorRGBA(0, 255, 255, 255))
+					{
+						continue;
+					}
+
+					rendering::setSceenBufferPixel(context, j, i, color);
+					rendering::setDepthBufferPixel(context, j, i, spriteCameraPlaneDistance/camera.farPlane);
+				}
+			}
+		}
+	}
 }
 
 
@@ -324,13 +382,47 @@ auto renderFloorAndCeiling(rendering::Context& context, const camera::Camera& ca
 	);
 }
 
-auto renderMain(rendering::Context& context, const camera::Camera& camera, const std::vector<wall::Wall>& level, const std::vector<rendering::Texture>& textures)
+auto renderBackground(rendering::Context& context, const camera::Camera& camera, const std::vector<rendering::Texture>& textures)
+{
+	const int screenCenterX = context.width / 2;
+	const int screenCenterY = context.height / 2;
+
+	for (int i = 0; i < screenCenterY*2; i++)
+	{
+		for (int j = 0; j < screenCenterX*2; j++)
+		{
+			if (context.depthBuffer[i * context.width + j] < 1.0f)
+			{
+				continue;
+			}
+
+			const auto cameraRight = ds::Vec2(-camera.front.y, camera.front.x);
+			const auto rayDir = (float)((j - screenCenterX) / screenCenterX) * cameraRight + camera.front;
+
+			const float angle = std::atan2(camera.front.x, camera.front.y);
+
+			const auto uv = ds::Vec2(angle / 2*glm::pi<float>() + (j / context.width), i / context.height);
+			const auto color = sampleFromTexture(textures[4].mipmaps[0], uv, false);
+
+			rendering::setSceenBufferPixel(context, j, i, color);
+		}
+	}
+}
+
+auto renderMain(
+	rendering::Context& context, 
+	const camera::Camera& camera, 
+	const std::vector<wall::Wall>& level, 
+	const std::vector<rendering::Texture>& textures, 
+	const std::vector<rendering::Sprite>& sprites)
 {
 
 	rendering::clearContext(context);
 
 	renderWalls(context, camera, level, textures);
 	renderFloorAndCeiling(context, camera, textures);
+	renderSprites(context, camera, sprites);
+	renderBackground(context, camera, textures);
 
 	rendering::renderContext(context);
 }
@@ -338,113 +430,118 @@ auto renderMain(rendering::Context& context, const camera::Camera& camera, const
 
 auto processInput(SDL::EventHandler& eventHandler, camera::Camera& camera, rendering::Context& context, const float deltaTimeSecs)
 {
-		eventHandler.pollEvents();
+	eventHandler.pollEvents();
 
-		const float movementSensivity = 7.0f * deltaTimeSecs;
-		float rotationSensivity = 2.0f * deltaTimeSecs;
+	const float movementSensivity = 7.0f * deltaTimeSecs;
+	float rotationSensivity = 2.0f * deltaTimeSecs;
 
-		const auto left = ds::Vec2(camera.front.y, -camera.front.x);
+	const auto left = ds::Vec2(camera.front.y, -camera.front.x);
 
-		ds::Vec2 direction(0.0f);
+	ds::Vec2 direction(0.0f);
 
-		if (eventHandler.getKeyState(SDL::KeyCode::KEY_W) == SDL::KeyState::Holding)
-		{
-			direction += camera.front;
-		}
-		if (eventHandler.getKeyState(SDL::KeyCode::KEY_S) == SDL::KeyState::Holding)
-		{
-			direction -= camera.front;
-		}
-		if (eventHandler.getKeyState(SDL::KeyCode::KEY_D) == SDL::KeyState::Holding)
-		{
-			direction += left;
-		}
-		if (eventHandler.getKeyState(SDL::KeyCode::KEY_A) == SDL::KeyState::Holding)
-		{
-			direction -= left;
-		}
+	if (eventHandler.getKeyState(SDL::KeyCode::KEY_W) == SDL::KeyState::Holding)
+	{
+		direction += camera.front;
+	}
+	if (eventHandler.getKeyState(SDL::KeyCode::KEY_S) == SDL::KeyState::Holding)
+	{
+		direction -= camera.front;
+	}
+	if (eventHandler.getKeyState(SDL::KeyCode::KEY_D) == SDL::KeyState::Holding)
+	{
+		direction += left;
+	}
+	if (eventHandler.getKeyState(SDL::KeyCode::KEY_A) == SDL::KeyState::Holding)
+	{
+		direction -= left;
+	}
 
-		if (glm::length(direction) > 0.1f)
-		{
-			camera.position += glm::normalize(direction) * movementSensivity;
-		}
+	if (glm::length(direction) > 0.1f)
+	{
+		camera.velocity = glm::normalize(direction) * movementSensivity;
+	}
 
 
-		if (eventHandler.getKeyState(SDL::KeyCode::KEY_RIGHT) == SDL::KeyState::Holding)
-		{
-			camera.front = ds::Vec3(glm::rotateZ(ds::Vec3(camera.front, 0.0f), -rotationSensivity));
-		}
-		if (eventHandler.getKeyState(SDL::KeyCode::KEY_LEFT) == SDL::KeyState::Holding)
-		{
-			camera.front = ds::Vec3(glm::rotateZ(ds::Vec3(camera.front, 0.0f), rotationSensivity));
-		}
+	if (eventHandler.getKeyState(SDL::KeyCode::KEY_RIGHT) == SDL::KeyState::Holding)
+	{
+		camera.front = ds::Vec3(glm::rotateZ(ds::Vec3(camera.front, 0.0f), -rotationSensivity));
+	}
+	if (eventHandler.getKeyState(SDL::KeyCode::KEY_LEFT) == SDL::KeyState::Holding)
+	{
+		camera.front = ds::Vec3(glm::rotateZ(ds::Vec3(camera.front, 0.0f), rotationSensivity));
+	}
 
-		if (eventHandler.getKeyState(SDL::KeyCode::KEY_KP_PLUS) == SDL::KeyState::Holding)
-		{
-			camera.fov += 0.5f * deltaTimeSecs;
-		}
-		if (eventHandler.getKeyState(SDL::KeyCode::KEY_KP_MINUS) == SDL::KeyState::Holding)
-		{
-			camera.fov -= 0.5f * deltaTimeSecs;
-		}
+	if (eventHandler.getKeyState(SDL::KeyCode::KEY_KP_PLUS) == SDL::KeyState::Holding)
+	{
+		camera.fov += 0.5f * deltaTimeSecs;
+	}
+	if (eventHandler.getKeyState(SDL::KeyCode::KEY_KP_MINUS) == SDL::KeyState::Holding)
+	{
+		camera.fov -= 0.5f * deltaTimeSecs;
+	}
 
-		if (eventHandler.getKeyState(SDL::KeyCode::KEY_Q) == SDL::KeyState::Holding)
-		{
-			camera.height += 0.5f * deltaTimeSecs;
-		}
-		if (eventHandler.getKeyState(SDL::KeyCode::KEY_E) == SDL::KeyState::Holding)
-		{
-			camera.height -= 0.5f * deltaTimeSecs;
-		}
+	if (eventHandler.getKeyState(SDL::KeyCode::KEY_Q) == SDL::KeyState::Holding)
+	{
+		camera.height += 0.5f * deltaTimeSecs;
+	}
+	if (eventHandler.getKeyState(SDL::KeyCode::KEY_E) == SDL::KeyState::Holding)
+	{
+		camera.height -= 0.5f * deltaTimeSecs;
+	}
 
-		if (eventHandler.getKeyState(SDL::KeyCode::KEY_M) == SDL::KeyState::Holding)
-		{
-			context.useMipmap = true;
-		}
-		if (eventHandler.getKeyState(SDL::KeyCode::KEY_N) == SDL::KeyState::Holding)
-		{
-			context.useMipmap = false;
-		}
+	if (eventHandler.getKeyState(SDL::KeyCode::KEY_M) == SDL::KeyState::Holding)
+	{
+		context.useMipmap = true;
+	}
+	if (eventHandler.getKeyState(SDL::KeyCode::KEY_N) == SDL::KeyState::Holding)
+	{
+		context.useMipmap = false;
+	}
 
-		if (eventHandler.getKeyState(SDL::KeyCode::KEY_B) == SDL::KeyState::Holding)
+	if (eventHandler.getKeyState(SDL::KeyCode::KEY_B) == SDL::KeyState::Holding)
+	{
+		context.useFiltering = true;
+	}
+	if (eventHandler.getKeyState(SDL::KeyCode::KEY_P) == SDL::KeyState::Holding)
+	{
+		context.useFiltering = false;
+	}
+}
+
+auto loadTextures() -> std::vector<rendering::Texture>
+{
+	std::string filenames[] = {
+		"assets/textures/brick.bmp",
+		"assets/textures/mud.bmp",
+		"assets/textures/coin.bmp",
+		"assets/textures/tree1.bmp",
+		"assets/textures/sky.bmp",
+	};
+
+	std::vector<rendering::Texture> textures;
+
+	for (const auto& filename : filenames)
+	{
+		auto result = media::imageFromBitMapFile(filename);
+
+		if (!result.has_value())
 		{
-			context.useFiltering = true;
+			std::cout << result.error();
+			exit(1);
 		}
-		if (eventHandler.getKeyState(SDL::KeyCode::KEY_P) == SDL::KeyState::Holding)
+		else
 		{
-			context.useFiltering = false;
+			textures.push_back(rendering::createTexture(std::move(result.value())));
 		}
+	}
+
+	return textures;
 }
 
 
 int main(int argc, char* argv[])
 {
-	std::vector<rendering::Texture> textures;
-
-	auto result = media::imageFromBitMapFile("assets/textures/brick.bmp");
-
-	if (!result.has_value())
-	{
-		std::cout << result.error();
-		exit(1);
-	}
-	else
-	{
-		textures.push_back(rendering::createTexture(std::move(result.value())));
-	}
-
-	result = media::imageFromBitMapFile("assets/textures/mud.bmp");
-
-	if (!result.has_value())
-	{
-		std::cout << result.error();
-		exit(1);
-	}
-	else
-	{
-		textures.push_back(rendering::createTexture(std::move(result.value())));
-	}
-
+	std::vector<rendering::Texture> textures = loadTextures();
 
 	SDL::initializeSDL();
 
@@ -463,40 +560,77 @@ int main(int argc, char* argv[])
 	bool quit = false;
 	auto eventHandler = SDL::EventHandler();
 
-	std::vector<wall::Wall> lines = 
-	{ 
-		wall::Wall( ds::Vec2( 4.0f,  1.0f), ds::Vec2( 2.0f,  1.0f), 1.0f, ds::Vec3(0.8f, 0.1f, 0.0f)),
-		wall::Wall( ds::Vec2( 2.0f,  1.0f), ds::Vec2( 2.0f,  3.0f), 1.0f, ds::Vec3(0.1f, 0.8f, 0.0f)),
-		wall::Wall( ds::Vec2( 2.0f,  3.0f), ds::Vec2(-3.0f,  3.0f), 1.0f, ds::Vec3(0.1f, 0.0f, 0.8f)),
-		wall::Wall( ds::Vec2(-3.0f,  3.0f), ds::Vec2(-3.0f, -1.0f), 1.0f, ds::Vec3(0.8f, 0.0f, 0.1f)),
-		wall::Wall( ds::Vec2(-3.0f, -1.0f), ds::Vec2( 0.0f, -1.0f), 1.0f, ds::Vec3(0.8f, 0.1f, 0.0f)),
-		wall::Wall( ds::Vec2( 0.0f, -1.0f), ds::Vec2( 0.0f, -2.0f), 1.0f, ds::Vec3(0.8f, 0.1f, 0.0f)),
-		wall::Wall( ds::Vec2( 0.0f, -2.0f), ds::Vec2(-3.0f, -2.0f), 1.0f, ds::Vec3(0.8f, 0.1f, 0.0f)),
-		wall::Wall( ds::Vec2(-3.0f, -2.0f), ds::Vec2(-3.0f, -4.0f), 1.0f, ds::Vec3(0.8f, 0.1f, 0.0f)),
-		wall::Wall( ds::Vec2(-3.0f, -4.0f), ds::Vec2( 1.0f, -4.0f), 1.0f, ds::Vec3(0.8f, 0.1f, 0.0f)),
-		wall::Wall( ds::Vec2( 2.0f, -4.0f), ds::Vec2( 3.0f, -4.0f), 1.0f, ds::Vec3(0.8f, 0.1f, 0.0f)),
-		wall::Wall( ds::Vec2( 3.0f, -4.0f), ds::Vec2( 3.0f, -2.0f), 1.0f, ds::Vec3(0.8f, 0.1f, 0.0f)),
-		wall::Wall( ds::Vec2( 3.0f, -2.0f), ds::Vec2( 2.0f, -2.0f), 1.0f, ds::Vec3(0.8f, 0.1f, 0.0f)),
-		wall::Wall( ds::Vec2( 2.0f, -2.0f), ds::Vec2( 2.0f,  0.0f), 1.0f, ds::Vec3(0.8f, 0.1f, 0.0f)),
-		wall::Wall( ds::Vec2( 2.0f,  0.0f), ds::Vec2( 4.0f,  0.0f), 1.0f, ds::Vec3(0.8f, 0.1f, 0.0f)),
+	std::vector<wall::Wall> lines =
+	{
+		wall::Wall(ds::Vec2(4.0f,  1.0f), ds::Vec2(2.0f,  1.0f), 1.0f, ds::Vec3(0.8f, 0.1f, 0.0f)),
+		wall::Wall(ds::Vec2(2.0f,  1.0f), ds::Vec2(2.0f,  3.0f), 1.0f, ds::Vec3(0.1f, 0.8f, 0.0f)),
+		wall::Wall(ds::Vec2(2.0f,  3.0f), ds::Vec2(-3.0f,  3.0f), 1.0f, ds::Vec3(0.1f, 0.0f, 0.8f)),
+		wall::Wall(ds::Vec2(-3.0f,  3.0f), ds::Vec2(-3.0f, -1.0f), 1.0f, ds::Vec3(0.8f, 0.0f, 0.1f)),
+		wall::Wall(ds::Vec2(-3.0f, -1.0f), ds::Vec2(0.0f, -1.0f), 1.0f, ds::Vec3(0.8f, 0.1f, 0.0f)),
+		wall::Wall(ds::Vec2(0.0f, -1.0f), ds::Vec2(0.0f, -2.0f), 1.0f, ds::Vec3(0.8f, 0.1f, 0.0f)),
+		wall::Wall(ds::Vec2(0.0f, -2.0f), ds::Vec2(-3.0f, -2.0f), 1.0f, ds::Vec3(0.8f, 0.1f, 0.0f)),
+		wall::Wall(ds::Vec2(-3.0f, -2.0f), ds::Vec2(-3.0f, -4.0f), 1.0f, ds::Vec3(0.8f, 0.1f, 0.0f)),
+		wall::Wall(ds::Vec2(-3.0f, -4.0f), ds::Vec2(1.0f, -4.0f), 1.0f, ds::Vec3(0.8f, 0.1f, 0.0f)),
+		wall::Wall(ds::Vec2(2.0f, -4.0f), ds::Vec2(3.0f, -4.0f), 1.0f, ds::Vec3(0.8f, 0.1f, 0.0f)),
+		wall::Wall(ds::Vec2(3.0f, -4.0f), ds::Vec2(3.0f, -2.0f), 1.0f, ds::Vec3(0.8f, 0.1f, 0.0f)),
+		wall::Wall(ds::Vec2(3.0f, -2.0f), ds::Vec2(2.0f, -2.0f), 1.0f, ds::Vec3(0.8f, 0.1f, 0.0f)),
+		wall::Wall(ds::Vec2(2.0f, -2.0f), ds::Vec2(2.0f,  0.0f), 1.0f, ds::Vec3(0.8f, 0.1f, 0.0f)),
+		wall::Wall(ds::Vec2(2.0f,  0.0f), ds::Vec2(4.0f,  0.0f), 1.0f, ds::Vec3(0.8f, 0.1f, 0.0f)),
 	};
+
+	std::vector<rendering::Sprite> sprites;
+
+	std::vector<ds::Vec2> coinPositions = 
+	{
+		{0.2f, 1.0f},
+		{0.0f, 1.0f},
+		{0.1f, 1.0f}
+	};
+
+	std::vector<ds::Vec2> treePositions = 
+	{
+		{100.0f, 10.0f},
+		{17.0f, 12.0f},
+		{-10.0f, -8.0f}
+	};
+
+	for (const auto& pos : coinPositions)
+	{
+		auto coin = rendering::spriteFromTexture(textures[2]);
+		coin.size = 0.3f;
+		coin.position = pos;
+
+		sprites.push_back(coin);
+	}
+
+
+	for (const auto& pos : treePositions)
+	{
+		auto tree = rendering::spriteFromTexture(textures[3]);
+
+		tree.position = pos;
+		tree.size = 2.0f;
+		tree.height = -2.5f;
+
+		sprites.push_back(tree);
+	}
 
 	camera::Camera camera = camera::Camera();
 
 	auto timeBefore = std::chrono::high_resolution_clock::now();
-    auto timeNow = std::chrono::high_resolution_clock::now();
+	auto timeNow = std::chrono::high_resolution_clock::now();
 
 	while (!eventHandler.shouldQuit())
 	{
 		timeNow = std::chrono::high_resolution_clock::now();
-		const float deltaTimeSec = std::chrono::duration_cast<std::chrono::milliseconds>(timeNow - timeBefore).count()/1000.0f;
+		const float deltaTimeSec = std::chrono::duration_cast<std::chrono::milliseconds>(timeNow - timeBefore).count() / 1000.0f;
 		timeBefore = timeNow;
 
 		processInput(eventHandler, camera, mainContext, deltaTimeSec);
 
-		glm::mat4 cameraTrsf = camera::getTransform(camera);
+		camera::updateCamera(camera);
 
-		renderMain(mainContext, camera, lines, textures);
+		renderMain(mainContext, camera, lines, textures, sprites);
 
 		//renderViewport(viewContext, camera, lines);
 	}

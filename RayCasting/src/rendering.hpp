@@ -18,6 +18,22 @@ namespace rendering
 		size_t height;
 	};
 
+	
+	struct Sprite
+	{
+		Texture texture;
+
+		ds::Vec2 position;
+		float size;
+		float height;
+	};
+
+
+	auto spriteFromTexture(rendering::Texture& texture) -> rendering::Sprite
+	{
+		return rendering::Sprite{ rendering::Texture{texture.mipmaps, texture.width, texture.height}, ds::Vec2(0.0f, 0.0f), 1.0f, 0.0f};
+	}
+
 
 	auto minifyImage(const media::Image& image) -> media::Image
 	{
@@ -60,6 +76,7 @@ namespace rendering
 		size_t width, height;
 		ScreenBuffer<uint32_t> screenBuffer;
 		ScreenBuffer<uint8_t> stencilBuffer;
+		ScreenBuffer<float> depthBuffer;
 
 		bool useMipmap = true;
 		bool useFiltering = true;
@@ -69,6 +86,7 @@ namespace rendering
 			renderer(std::move(renderer)),
 			screenBuffer(width * height),
 			stencilBuffer(width * height),
+			depthBuffer(width * height, 1.0f),
 			width(width),
 			height(height)
 		{
@@ -97,6 +115,12 @@ namespace rendering
 	}
 
 
+	auto setDepthBufferPixel(Context& context, const size_t x, const size_t y, float value)
+	{
+		context.depthBuffer[y * context.width + x] = value;
+	}
+
+
 	auto renderContext(Context& context)
 	{
 		SDL::updateTexture(context.screenTexture, context.screenBuffer, context.width);
@@ -111,5 +135,10 @@ namespace rendering
 	{
 		std::memset(context.screenBuffer.data(), 0, context.screenBuffer.size() * sizeof(context.screenBuffer[0]));
 		std::memset(context.stencilBuffer.data(), 0, context.stencilBuffer.size() * sizeof(context.stencilBuffer[0]));
+
+		for (size_t i = 0; i < context.depthBuffer.size(); i++)
+		{
+			context.depthBuffer[i] = 1.0f;
+		}
 	}
 }
