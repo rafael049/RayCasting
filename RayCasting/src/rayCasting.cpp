@@ -291,17 +291,17 @@ auto renderSprites(rendering::Context& context, const camera::Camera& camera, co
 			continue;
 		}
 
-		const float spriteSize = sprite.size / (spriteCameraPlaneDistance * std::tan(camera.fov/2));
+		const float spriteSize = sprite.size / (spriteCameraPlaneDistance * std::tan(camera.fov/2.0f));
 
-		const float spriteWidth = spriteSize * context.width;
-		const float spriteHeight = spriteSize * context.width;
+		const float spriteWidth = spriteSize * context.height;
+		const float spriteHeight = spriteSize * context.height;
 
 		const ds::Vec2 fc = camera.position + camera.front*spriteCameraPlaneDistance;
 		const ds::Vec2 fcSpriteVector = sprite.position - fc;
 		const float distanceFc = glm::dot(fcSpriteVector, cameraRight);
-		const float distanceFcNormalized = (distanceFc / spriteCameraPlaneDistance);
+		const float distanceFcScreen = (distanceFc / spriteCameraPlaneDistance);
 
-		const int spriteScreenCenterX = distanceFcNormalized * screenCenterX / (std::tan(camera.fov/2) * (context.width/context.height)) + screenCenterX;
+		const int spriteScreenCenterX = distanceFcScreen * screenCenterX / (std::tan(camera.fov/2) * aspectRatio) + screenCenterX;
 		const int spriteScreenCenterY = ((camera.height + sprite.height + 0.0f) / spriteCameraPlaneDistance) * screenCenterY / std::tan(camera.fov/2) + screenCenterY;
 		const int spriteScreenLeft = spriteScreenCenterX - spriteWidth / 2;
 		const int spriteScreenRight = spriteScreenCenterX + spriteWidth / 2;
@@ -387,7 +387,13 @@ auto renderBackground(rendering::Context& context, const camera::Camera& camera,
 	const int screenCenterX = context.width / 2;
 	const int screenCenterY = context.height / 2;
 
-	for (int i = 0; i < screenCenterY*2; i++)
+	const float aspect = context.width / context.height;
+	constexpr float pi = glm::pi<float>();
+	constexpr float pi2 = 2 * pi;
+	const media::Image& skyTexture = textures[4].mipmaps[0];
+	const float textureAspect = (float)skyTexture.width / (float)skyTexture.height;
+
+	for (int i = 0; i < screenCenterY; i++)
 	{
 		for (int j = 0; j < screenCenterX*2; j++)
 		{
@@ -396,13 +402,19 @@ auto renderBackground(rendering::Context& context, const camera::Camera& camera,
 				continue;
 			}
 
-			const auto cameraRight = ds::Vec2(-camera.front.y, camera.front.x);
-			const auto rayDir = (float)((j - screenCenterX) / screenCenterX) * cameraRight + camera.front;
+			const auto frontVector = ds::Vec3(camera.front.x, 0.0f, camera.front.y);
+			const auto rightVector = ds::Vec3(camera.front.y, 0.0f, -camera.front.x);
 
-			const float angle = std::atan2(camera.front.x, camera.front.y);
+			const float dx = ((float)(j - screenCenterX) / (float)screenCenterX);
+			const float dy = ((float)((screenCenterY - i) / (float)screenCenterY));
+			auto rayDir = frontVector + rightVector * (dx * std::atan(camera.fov/2.0f)*aspect);
+			rayDir.y =  (dy * std::sin(camera.fov/2.0f));
 
-			const auto uv = ds::Vec2(angle / 2*glm::pi<float>() + (j / context.width), i / context.height);
-			const auto color = sampleFromTexture(textures[4].mipmaps[0], uv, false);
+			rayDir = glm::normalize(rayDir);
+			const float uvX = 0.5f + std::atan2(rayDir.z, rayDir.x) / pi2;
+			const float uvY = 0.5f + std::asin(rayDir.y) / pi;
+			const auto uv = ds::Vec2(uvX, uvY);
+			const auto color = sampleFromTexture(skyTexture, uv, true);
 
 			rendering::setSceenBufferPixel(context, j, i, color);
 		}
@@ -433,7 +445,7 @@ auto processInput(SDL::EventHandler& eventHandler, camera::Camera& camera, rende
 	eventHandler.pollEvents();
 
 	const float movementSensivity = 7.0f * deltaTimeSecs;
-	float rotationSensivity = 2.0f * deltaTimeSecs;
+	float rotationSensivity = 1.0f * deltaTimeSecs;
 
 	const auto left = ds::Vec2(camera.front.y, -camera.front.x);
 
@@ -464,11 +476,11 @@ auto processInput(SDL::EventHandler& eventHandler, camera::Camera& camera, rende
 
 	if (eventHandler.getKeyState(SDL::KeyCode::KEY_RIGHT) == SDL::KeyState::Holding)
 	{
-		camera.front = ds::Vec3(glm::rotateZ(ds::Vec3(camera.front, 0.0f), -rotationSensivity));
+		camera.angularVelocity = -rotationSensivity;
 	}
 	if (eventHandler.getKeyState(SDL::KeyCode::KEY_LEFT) == SDL::KeyState::Holding)
 	{
-		camera.front = ds::Vec3(glm::rotateZ(ds::Vec3(camera.front, 0.0f), rotationSensivity));
+		camera.angularVelocity = rotationSensivity;
 	}
 
 	if (eventHandler.getKeyState(SDL::KeyCode::KEY_KP_PLUS) == SDL::KeyState::Holding)
@@ -545,8 +557,8 @@ int main(int argc, char* argv[])
 
 	SDL::initializeSDL();
 
-	const int screenWidth = 800;
-	const int screenHeight = 600;
+	const int screenWidth = 1280;
+	const int screenHeight = 720;
 
 	//auto viewWindow = *SDL::createWindow("View window", { 800, 600 });
 	auto mainWindow = *SDL::createWindow("Main window", { screenWidth, screenHeight });

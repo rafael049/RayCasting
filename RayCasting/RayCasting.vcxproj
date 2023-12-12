@@ -140,6 +140,7 @@
     <ClInclude Include="src\ds.hpp" />
     <ClInclude Include="src\media.hpp" />
     <ClInclude Include="src\line.hpp" />
+    <ClInclude Include="src\rayCasting.h" />
     <ClInclude Include="src\rendering.hpp" />
     <ClInclude Include="src\sdl.hpp" />
     <ClInclude Include="src\wall.hpp" />

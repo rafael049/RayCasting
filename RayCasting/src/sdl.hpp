@@ -51,6 +51,7 @@ namespace SDL
 
 			return std::unexpected(message);
 		}
+
 		return true;
 	}
 
@@ -58,6 +59,7 @@ namespace SDL
 	auto createWindow(const std::string& title, const std::pair<int, int> size) -> std::expected<SDLWindowPtr, std::string>
 	{
 		SDL_Window* window = SDL_CreateWindow("SDL Window", SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED, size.first, size.second, SDL_WINDOW_SHOWN);
+
 		if (!window)
 		{
 			auto message = std::format("Window creation failed: {}", SDL_GetError());

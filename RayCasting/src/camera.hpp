@@ -5,6 +5,7 @@
 #include <glm/mat3x3.hpp>
 #include <glm/vec2.hpp>
 #include <glm/gtx/matrix_transform_2d.hpp>
+#include <glm/gtx/rotate_vector.hpp>
 
 namespace camera
 {
@@ -13,6 +14,8 @@ namespace camera
 		glm::vec2 position = glm::vec2(0.0f, 0.0f);
 
 		glm::vec2 velocity = glm::vec2(0.0f, 0.0f);
+
+		float angularVelocity = 0.0f;
 
 		glm::vec2 front = glm::vec2(0.0f, 1.0f);
 
@@ -39,11 +42,21 @@ namespace camera
 			camera.velocity.x = 0.0f;
 			camera.velocity.y = 0.0f;
 		}
+
+		if (glm::abs(camera.angularVelocity) > 0.01f)
+		{
+			camera.angularVelocity /= 2.0f;
+		}
+		else
+		{
+			camera.angularVelocity = 0.0f;
+		}
 	}
 
 	auto updateCamera(Camera& camera)
 	{
 		camera.position += camera.velocity;
+		camera.front = ds::Vec3(glm::rotateZ(ds::Vec3(camera.front, 0.0f), camera.angularVelocity));
 		headMovement(camera);
 		friction(camera);
 	}
