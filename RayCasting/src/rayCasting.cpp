@@ -6,6 +6,9 @@
 #include <numeric>
 #include <algorithm>
 #include <execution>
+#include <functional>
+
+#define GLM_ENABLE_EXPERIMENTAL
 
 #include <glm/mat2x2.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -24,6 +27,25 @@ enum class Orientation
 	ClockWise,
 	CounterClockWise
 };
+
+
+auto executeInParallel(size_t numThreads, size_t dataSize, std::function<void(size_t start, size_t end)> fn)
+{
+	std::vector<std::thread> threads(numThreads);
+
+	int chunkSize = dataSize / numThreads;
+
+	for (int i = 0; i < numThreads; ++i)
+	{
+		int start = i * chunkSize;
+		int end = (i == numThreads - 1) ? dataSize : start + chunkSize;
+		threads[i] = std::thread(fn, start, end);
+	}
+
+	for (auto& thread : threads) {
+        thread.join();
+    }
+}
 
 
 
@@ -170,19 +192,19 @@ auto sampleFromTexture(const media::Image& texture, const ds::Vec2 uv, const boo
 
 size_t getMipmapLevel(float distance)
 {
-	if (distance < 25.0f)
+	if (distance < 10.0f)
 	{
 		return 0;
 	}
-	if (distance < 50.0f)
+	if (distance < 20.0f)
 	{
 		return 1;
 	}
-	if (distance < 100.0f)
+	if (distance < 40.0f)
 	{
 		return 2;
 	}
-	if (distance < 200.0f)
+	if (distance < 80.0f)
 	{
 		return 3;
 	}
@@ -205,72 +227,78 @@ auto renderWalls(rendering::Context& context, const camera::Camera& camera, cons
 	const float projectionPlaneWidth = projectionPlaneHeight * ((float)context.width / (float)context.height);
 	const float rayVectorOffset = projectionPlaneWidth / numberOfRays;
 
-	for (size_t i = 0; i < numberOfRays; i++)
-	{
-		const float amountToOffset = (rayVectorOffset * (float)((int)i - (numberOfRays / 2)));
-		const auto rayDirection = glm::normalize(frontVector - rightVector * amountToOffset);
-
-		Line rayLine{ rayOrigin, rayOrigin + rayDirection * camera.farPlane };
-
-		for (const auto& wall : level)
+	auto calculateWallZBuffer = [&](size_t start, size_t end)
 		{
-			std::optional hasIntersection = getIntersectionPoint(rayLine, wall.line);
-
-			if (hasIntersection.has_value())
+			for (size_t i = start; i < end; i++)
 			{
-				auto intersectionPoint = *hasIntersection;
+				const float amountToOffset = (rayVectorOffset * (float)((int)i - (numberOfRays / 2)));
+				const auto rayDirection = glm::normalize(frontVector - rightVector * amountToOffset);
 
-				float eyeDistance = glm::distance(rayOrigin, intersectionPoint);
+				Line rayLine{ rayOrigin, rayOrigin + rayDirection * camera.farPlane };
 
-				float normalizedCameraPlaneDistance = eyeDistance * glm::dot(frontVector, rayDirection) / camera.farPlane;
-
-				if (normalizedCameraPlaneDistance < zbuffer[i])
+				for (const auto& wall : level)
 				{
-					zbuffer[i] = normalizedCameraPlaneDistance;
-					colorBuffer[i] = wall.color;
-					uvBuffer[i] = glm::distance(intersectionPoint, wall.line.start);
+					std::optional hasIntersection = getIntersectionPoint(rayLine, wall.line);
+
+					if (hasIntersection.has_value())
+					{
+						auto intersectionPoint = *hasIntersection;
+
+						float eyeDistance = glm::distance(rayOrigin, intersectionPoint);
+
+						float normalizedCameraPlaneDistance = eyeDistance * glm::dot(frontVector, rayDirection) / camera.farPlane;
+
+						if (normalizedCameraPlaneDistance < zbuffer[i])
+						{
+							zbuffer[i] = normalizedCameraPlaneDistance;
+							colorBuffer[i] = wall.color;
+							uvBuffer[i] = glm::distance(intersectionPoint, wall.line.start);
+						}
+					}
 				}
 			}
-		}
-	}
+		};
+	//executeInParallel(12, numberOfRays, calculateWallZBuffer);
+	calculateWallZBuffer(0, numberOfRays);
 
-
-	std::vector<size_t> raysEnumeration(numberOfRays);
-
-	std::iota(raysEnumeration.begin(), raysEnumeration.end(), 0);
-
-	std::for_each(std::execution::par, raysEnumeration.begin(), raysEnumeration.end(),
-		[&](size_t i)
+	auto render = [&](size_t start, size_t end)
 		{
-			float pixelDistance = zbuffer[i]*camera.farPlane;
-
-			if (pixelDistance < camera.farPlane)
+			for (size_t i = start; i < end; ++i)
 			{
-				float worlWallTop = 2.0f - camera.height;
-				float worlWallBottom = 0.0f - camera.height;
-				float viewWallTop = worlWallTop / pixelDistance;
-				float viewWallBottom = worlWallBottom / pixelDistance;
-				int screenWallTop = viewWallTop * (float)(context.height) / projectionPlaneHeight;
-				int screenWallBottom = viewWallBottom * (float)(context.height) / projectionPlaneHeight;
+				float pixelDistance = zbuffer[i] * camera.farPlane;
 
-				float pixelHorizontalPostion = zbuffer.size() - (i + 1);
-
-
-				size_t mipMapLevel = getMipmapLevel(pixelDistance);
-				const auto& texture = textures[0].mipmaps[mipMapLevel * (int)context.useMipmap];
-
-				for (int j = std::max(-(int)context.height / 2, screenWallBottom) + 1; j < std::min((int)context.height / 2, screenWallTop); j++)
+				if (pixelDistance < camera.farPlane)
 				{
-					const float uvY = camera.height + ((float)j * (projectionPlaneHeight / (float)context.height)) * pixelDistance;
-					const ds::Vec2 uv = ds::Vec2(uvBuffer[i], uvY);
-					const ds::Vec3 color = sampleFromTexture(texture, uv, context.useFiltering);
+					float worlWallTop = 2.0f - camera.height;
+					float worlWallBottom = 0.0f - camera.height;
+					float viewWallTop = worlWallTop / pixelDistance;
+					float viewWallBottom = worlWallBottom / pixelDistance;
+					int screenWallTop = viewWallTop * (float)(context.height) / projectionPlaneHeight;
+					int screenWallBottom = viewWallBottom * (float)(context.height) / projectionPlaneHeight;
 
-					rendering::setSceenBufferPixel(context, static_cast<size_t>(pixelHorizontalPostion), context.height / 2 - j, ds::ColorRGBA(color, 1.0f));
-					rendering::setStencilBufferPixel(context, static_cast<size_t>(pixelHorizontalPostion), context.height / 2 - j, 1);
-					rendering::setDepthBufferPixel(context, static_cast<size_t>(pixelHorizontalPostion), context.height / 2 - j, zbuffer[i]);
+					float pixelHorizontalPostion = zbuffer.size() - (i + 1);
+
+
+					size_t mipMapLevel = getMipmapLevel(pixelDistance);
+					const auto& texture = textures[0].mipmaps[mipMapLevel * (int)context.useMipmap];
+
+					for (int j = std::max(-(int)context.height / 2, screenWallBottom) + 1; j < std::min((int)context.height / 2, screenWallTop); j++)
+					{
+						const float uvY = camera.height + ((float)j * (projectionPlaneHeight / (float)context.height)) * pixelDistance;
+						const ds::Vec2 uv = ds::Vec2(uvBuffer[i], uvY);
+						//const ds::Vec2 uv = ds::Vec2(uvY, uvBuffer[i]);
+						const ds::Vec3 color = sampleFromTexture(texture, uv, context.useFiltering);
+
+						rendering::setSceenBufferPixel(context, static_cast<size_t>(pixelHorizontalPostion), context.height / 2 - j, ds::ColorRGBA(color, 1.0f));
+						rendering::setStencilBufferPixel(context, static_cast<size_t>(pixelHorizontalPostion), context.height / 2 - j, 1);
+						rendering::setDepthBufferPixel(context, static_cast<size_t>(pixelHorizontalPostion), context.height / 2 - j, zbuffer[i]);
+					}
 				}
 			}
-		});
+		};
+
+	executeInParallel(3, numberOfRays, render);
+
 }
 
 
@@ -291,18 +319,18 @@ auto renderSprites(rendering::Context& context, const camera::Camera& camera, co
 			continue;
 		}
 
-		const float spriteSize = sprite.size / (spriteCameraPlaneDistance * std::tan(camera.fov/2.0f));
+		const float spriteSize = sprite.size / (spriteCameraPlaneDistance * std::tan(camera.fov / 2.0f));
 
 		const float spriteWidth = spriteSize * context.height;
 		const float spriteHeight = spriteSize * context.height;
 
-		const ds::Vec2 fc = camera.position + camera.front*spriteCameraPlaneDistance;
+		const ds::Vec2 fc = camera.position + camera.front * spriteCameraPlaneDistance;
 		const ds::Vec2 fcSpriteVector = sprite.position - fc;
 		const float distanceFc = glm::dot(fcSpriteVector, cameraRight);
 		const float distanceFcScreen = (distanceFc / spriteCameraPlaneDistance);
 
-		const int spriteScreenCenterX = distanceFcScreen * screenCenterX / (std::tan(camera.fov/2) * aspectRatio) + screenCenterX;
-		const int spriteScreenCenterY = ((camera.height + sprite.height + 0.0f) / spriteCameraPlaneDistance) * screenCenterY / std::tan(camera.fov/2) + screenCenterY;
+		const int spriteScreenCenterX = distanceFcScreen * screenCenterX / (std::tan(camera.fov / 2) * aspectRatio) + screenCenterX;
+		const int spriteScreenCenterY = ((camera.height + sprite.height + 0.0f) / spriteCameraPlaneDistance) * screenCenterY / std::tan(camera.fov / 2) + screenCenterY;
 		const int spriteScreenLeft = spriteScreenCenterX - spriteWidth / 2;
 		const int spriteScreenRight = spriteScreenCenterX + spriteWidth / 2;
 		const int spriteScreenTop = spriteScreenCenterY - spriteHeight / 2;
@@ -312,7 +340,7 @@ auto renderSprites(rendering::Context& context, const camera::Camera& camera, co
 		{
 			for (int j = std::max(spriteScreenLeft, 0); j < std::min(spriteScreenRight, (int)context.width); j++)
 			{
-				if (context.depthBuffer[i*context.width + j] > spriteCameraPlaneDistance/camera.farPlane)
+				if (context.depthBuffer[i * context.width + j] > spriteCameraPlaneDistance / camera.farPlane)
 				{
 					const auto uv = ds::Vec2((float)((j - spriteScreenLeft) / spriteWidth), -(float)((i - spriteScreenTop) / spriteHeight));
 					const auto color = sampleFromTexture(sprite.texture.mipmaps[0], uv, false);
@@ -323,7 +351,7 @@ auto renderSprites(rendering::Context& context, const camera::Camera& camera, co
 					}
 
 					rendering::setSceenBufferPixel(context, j, i, color);
-					rendering::setDepthBufferPixel(context, j, i, spriteCameraPlaneDistance/camera.farPlane);
+					rendering::setDepthBufferPixel(context, j, i, spriteCameraPlaneDistance / camera.farPlane);
 				}
 			}
 		}
@@ -333,7 +361,6 @@ auto renderSprites(rendering::Context& context, const camera::Camera& camera, co
 
 auto renderFloorAndCeiling(rendering::Context& context, const camera::Camera& camera, const std::vector<rendering::Texture>& textures)
 {
-
 	const int screenCenterX = context.width / 2;
 	const int screenCenterY = context.height / 2;
 
@@ -343,43 +370,40 @@ auto renderFloorAndCeiling(rendering::Context& context, const camera::Camera& ca
 	const size_t numberOfRays = context.height / 2;
 	const float rayOffset = projectionPlaneHeight / numberOfRays;
 
-	std::vector<size_t> raysEnumeration(numberOfRays);
-
-	std::iota(raysEnumeration.begin(), raysEnumeration.end(), 0);
-
-
-	std::for_each(std::execution::par, raysEnumeration.begin(), raysEnumeration.end(),
-
-		[&](size_t i)
+	auto render = [&](size_t start, size_t end)
 		{
-			const auto ray = glm::normalize(ds::Vec2(1.0f, -(i * rayOffset))); // +x is forward and +y is up
-			const auto downVec = ds::Vec2(0.0f, -1.0f); // angle is measured from this vec
-			const float angle = std::acos(glm::dot(downVec, ray));
-			const float intersectionDistance = std::tanf(angle) * eyeHeight; // this is the distance of the intersection point between the ray and the floor
-
-
-			size_t mipMapLevel = getMipmapLevel(intersectionDistance);
-			const auto& floorTexture = textures[1].mipmaps[mipMapLevel * (int)context.useMipmap];
-
-			for (int j = 0; j < context.width; j++)
+			for (size_t i = start; i < end; ++i)
 			{
-				if (context.stencilBuffer[(i + screenCenterY) * context.width + j] == 1)
+				const auto ray = glm::normalize(ds::Vec2(1.0f, -(i * rayOffset))); // +x is forward and +y is up
+				const auto downVec = ds::Vec2(0.0f, -1.0f); // angle is measured from this vec
+				const float angle = std::acos(glm::dot(downVec, ray));
+				const float intersectionDistance = std::tanf(angle) * eyeHeight; // this is the distance of the intersection point between the ray and the floor
+
+
+				size_t mipMapLevel = getMipmapLevel(intersectionDistance);
+				const auto& floorTexture = textures[1].mipmaps[mipMapLevel * (int)context.useMipmap];
+
+				for (int j = 0; j < context.width; j++)
 				{
-					continue;
+					if (context.stencilBuffer[(i + screenCenterY) * context.width + j] == 1)
+					{
+						continue;
+					}
+
+					const auto right = ds::Vec2(camera.front.y, -camera.front.x);
+					const float uvFrontFactor = intersectionDistance;
+					const float uvRightFactor = (j - screenCenterX) * (projectionPlaneWidth / (float)(context.width / 2)) * intersectionDistance;
+					const auto uv = camera.position + (camera.front * uvFrontFactor) + (right * uvRightFactor);
+
+					const auto color = sampleFromTexture(floorTexture, uv, context.useFiltering);
+					//const auto color = ds::ColorRGBA(0.6f, 0.1f, 0.1f, 1.0f);
+
+					rendering::setSceenBufferPixel(context, j, i + screenCenterY, color);
 				}
-
-				const auto right = ds::Vec2(camera.front.y, -camera.front.x);
-				const float uvFrontFactor = intersectionDistance;
-				const float uvRightFactor = (j - screenCenterX) * (projectionPlaneWidth / (float)(context.width / 2)) * intersectionDistance;
-				const auto uv = camera.position + (camera.front * uvFrontFactor) + (right * uvRightFactor);
-
-				const auto color = sampleFromTexture(floorTexture, uv, context.useFiltering);
-				//const auto color = ds::ColorRGBA(0.6f, 0.1f, 0.1f, 1.0f);
-
-				rendering::setSceenBufferPixel(context, j, i + screenCenterY, color);
 			}
-		}
-	);
+		};
+
+	executeInParallel(3, numberOfRays, render);
 }
 
 auto renderBackground(rendering::Context& context, const camera::Camera& camera, const std::vector<rendering::Texture>& textures)
@@ -393,39 +417,44 @@ auto renderBackground(rendering::Context& context, const camera::Camera& camera,
 	const media::Image& skyTexture = textures[4].mipmaps[0];
 	const float textureAspect = (float)skyTexture.width / (float)skyTexture.height;
 
-	for (int i = 0; i < screenCenterY; i++)
-	{
-		for (int j = 0; j < screenCenterX*2; j++)
+	auto render = [&](size_t start, size_t end)
 		{
-			if (context.depthBuffer[i * context.width + j] < 1.0f)
+			for (int i = start; i < end; i++)
 			{
-				continue;
+				for (int j = 0; j < screenCenterX * 2; j++)
+				{
+					if (context.depthBuffer[i * context.width + j] < 1.0f)
+					{
+						continue;
+					}
+
+					const auto frontVector = ds::Vec3(camera.front.x, 0.0f, camera.front.y);
+					const auto rightVector = ds::Vec3(camera.front.y, 0.0f, -camera.front.x);
+
+					const float dx = ((float)(j - screenCenterX) / (float)screenCenterX);
+					const float dy = ((float)((screenCenterY - i) / (float)screenCenterY));
+					auto rayDir = frontVector + rightVector * (dx * std::atan(camera.fov / 2.0f) * aspect);
+					rayDir.y = (dy * std::sin(camera.fov / 2.0f));
+
+					rayDir = glm::normalize(rayDir);
+					const float uvX = 0.5f + std::atan2(rayDir.z, rayDir.x) / pi2;
+					const float uvY = 0.5f + std::asin(rayDir.y) / pi;
+					const auto uv = ds::Vec2(uvX, uvY);
+					const auto color = sampleFromTexture(skyTexture, uv, true);
+
+					rendering::setSceenBufferPixel(context, j, i, color);
+				}
 			}
+		};
 
-			const auto frontVector = ds::Vec3(camera.front.x, 0.0f, camera.front.y);
-			const auto rightVector = ds::Vec3(camera.front.y, 0.0f, -camera.front.x);
-
-			const float dx = ((float)(j - screenCenterX) / (float)screenCenterX);
-			const float dy = ((float)((screenCenterY - i) / (float)screenCenterY));
-			auto rayDir = frontVector + rightVector * (dx * std::atan(camera.fov/2.0f)*aspect);
-			rayDir.y =  (dy * std::sin(camera.fov/2.0f));
-
-			rayDir = glm::normalize(rayDir);
-			const float uvX = 0.5f + std::atan2(rayDir.z, rayDir.x) / pi2;
-			const float uvY = 0.5f + std::asin(rayDir.y) / pi;
-			const auto uv = ds::Vec2(uvX, uvY);
-			const auto color = sampleFromTexture(skyTexture, uv, true);
-
-			rendering::setSceenBufferPixel(context, j, i, color);
-		}
-	}
+	executeInParallel(6, screenCenterY, render);
 }
 
 auto renderMain(
-	rendering::Context& context, 
-	const camera::Camera& camera, 
-	const std::vector<wall::Wall>& level, 
-	const std::vector<rendering::Texture>& textures, 
+	rendering::Context& context,
+	const camera::Camera& camera,
+	const std::vector<wall::Wall>& level,
+	const std::vector<rendering::Texture>& textures,
 	const std::vector<rendering::Sprite>& sprites)
 {
 
@@ -557,22 +586,19 @@ int main(int argc, char* argv[])
 
 	SDL::initializeSDL();
 
-	const int screenWidth = 1280;
-	const int screenHeight = 720;
+	const int screenWidth = 800;
+	const int screenHeight = 600;
 
-	//auto viewWindow = *SDL::createWindow("View window", { 800, 600 });
 	auto mainWindow = *SDL::createWindow("Main window", { screenWidth, screenHeight });
 
-	//auto viewRenderer = *SDL::createRenderer(viewWindow);
 	auto mainRenderer = *SDL::createRenderer(mainWindow);
 
-	//rendering::Context viewContext(std::move(viewWindow), std::move(viewRenderer), 800, 600);
 	rendering::Context mainContext(std::move(mainWindow), std::move(mainRenderer), screenWidth, screenHeight);
 
 	bool quit = false;
 	auto eventHandler = SDL::EventHandler();
 
-	std::vector<wall::Wall> lines =
+	std::vector<wall::Wall> walls =
 	{
 		wall::Wall(ds::Vec2(4.0f,  1.0f), ds::Vec2(2.0f,  1.0f), 1.0f, ds::Vec3(0.8f, 0.1f, 0.0f)),
 		wall::Wall(ds::Vec2(2.0f,  1.0f), ds::Vec2(2.0f,  3.0f), 1.0f, ds::Vec3(0.1f, 0.8f, 0.0f)),
@@ -592,14 +618,14 @@ int main(int argc, char* argv[])
 
 	std::vector<rendering::Sprite> sprites;
 
-	std::vector<ds::Vec2> coinPositions = 
+	std::vector<ds::Vec2> coinPositions =
 	{
-		{0.2f, 1.0f},
-		{0.0f, 1.0f},
-		{0.1f, 1.0f}
+		{2.4f, 1.9f},
+		{0.1f, 1.5f},
+		{1.5f, 4.0f}
 	};
 
-	std::vector<ds::Vec2> treePositions = 
+	std::vector<ds::Vec2> treePositions =
 	{
 		{100.0f, 10.0f},
 		{17.0f, 12.0f},
@@ -611,10 +637,10 @@ int main(int argc, char* argv[])
 		auto coin = rendering::spriteFromTexture(textures[2]);
 		coin.size = 0.3f;
 		coin.position = pos;
+		coin.height = -0.2f;
 
 		sprites.push_back(coin);
 	}
-
 
 	for (const auto& pos : treePositions)
 	{
@@ -622,7 +648,7 @@ int main(int argc, char* argv[])
 
 		tree.position = pos;
 		tree.size = 2.0f;
-		tree.height = -2.5f;
+		tree.height = -2.0f;
 
 		sprites.push_back(tree);
 	}
@@ -631,6 +657,8 @@ int main(int argc, char* argv[])
 
 	auto timeBefore = std::chrono::high_resolution_clock::now();
 	auto timeNow = std::chrono::high_resolution_clock::now();
+	float cumulativeTime = 0.0f;
+	int numFrames = 0;
 
 	while (!eventHandler.shouldQuit())
 	{
@@ -642,9 +670,17 @@ int main(int argc, char* argv[])
 
 		camera::updateCamera(camera);
 
-		renderMain(mainContext, camera, lines, textures, sprites);
+		renderMain(mainContext, camera, walls, textures, sprites);
 
-		//renderViewport(viewContext, camera, lines);
+		numFrames += 1;
+		cumulativeTime += deltaTimeSec;
+
+		if (cumulativeTime > 1.0f)
+		{
+			std::cout << "Frame: " << numFrames / cumulativeTime << std::endl;
+			cumulativeTime = 0.0f;
+			numFrames = 0;
+		}
 	}
 
 	return 0;

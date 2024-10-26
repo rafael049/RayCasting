@@ -17,9 +17,9 @@ Small project to learn more about computer graphics and this rendering technique
 
 - ✔️ MultiThreading
 
-- ❌ 2D objets rendering
+- ✔️ 2D objets rendering
 
-- ❌ Skybox
+- ✔️ Skybox
 
 
 - ❌ Different floor levels
